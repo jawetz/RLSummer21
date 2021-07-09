@@ -3,8 +3,37 @@ import numpy as np
 import torch
 import argparse
 import gym
-from learner import Reinforce
 import time
+import torch.optim as optim
+from torch.distributions import Categorical
+import torch.nn.functional
+
+
+
+class Reinforce(torch.nn.Module):
+    def __init__(self):
+        self.args=args
+        self.device=args.device
+        super(Reinforce, self).__init__()
+        self.fc1=torch.nn.Linear(env.observation_space.shape[0], args.net_size)
+        self.fc2=torch.nn.Linear(args.net_size, args.net_size)
+        self.fcout=torch.nn.Linear(args.net_size, env.action_space.n)
+        self.drop=torch.nn.Dropout(p=0.5)
+        self.act=torch.relu
+        self.gamma=args.gamma
+
+        self.action_space=args.env.action_space
+        self.log_probs=[]
+        self.rewards=[]
+
+    def forward(self, obser):
+        out=self.act(self.fc1(obser))
+        out=self.drop(out)
+        out=self.act(self.fc2(out))
+        out=self.drop(out)
+        out=self.fcout(out)
+        softmax=torch.nn.functional.softmax(out, dim=1)
+        return softmax
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -35,7 +64,9 @@ outdir = '.\\tmp\\agent-results'
 if not os.path.exists(outdir):
     os.makedirs(outdir)
 
-agent = Reinforce(args, env.observation_space.shape[0], env.action_space.n)
+agent = Reinforce()
+optimizer=optim.Adam(agent.parameters(), lr=1e-2)
+
 
 do_render = True
 print_rate = args.print_rate
@@ -44,15 +75,16 @@ render_interval = print_rate
 total_rewards_list = []
 total_reward = 0
 reward = 0
+epso = np.finfo(np.float32).eps.item()
 
 tic = time.perf_counter()
-running_reward = 10
+
 
 
 def select_action(obs):
     obs = torch.from_numpy(obs).float().unsqueeze(0)
     probs = agent.forward(obs)
-    dist = torch.distributions.Categorical(probs)
+    dist = Categorical(probs)
     act = dist.sample()
     agent.log_probs.append(dist.log_prob(act))
     return act.item()
@@ -66,41 +98,44 @@ def finish():
         tot_rew = r + args.gamma * tot_rew
         returns.insert(0, tot_rew)
     returns = torch.tensor(returns)
-    returns = (returns-returns.mean())/(returns.std())
+    returns = (returns - returns.mean()) / (returns.std() + epso)
+
     for log_prob, R in zip(agent.log_probs, returns):
         policy_loss.append(-log_prob * R)
 
-    agent.optimizer.zero_grad()
+    optimizer.zero_grad()
     policy_loss = torch.cat(policy_loss).sum()
     policy_loss.backward()
-    agent.optimizer.step()
+    optimizer.step()
     del agent.log_probs[:]
     del agent.rewards[:]
 
-
+running_reward = 10
 for ep in range(args.max_episodes):
-    obs = env.reset()
-    total_reward = 0
-    done = False
+   obs, total_reward = env.reset(), 0
+   done= False
+   if ep != 0 and (ep % print_rate == 0):
+       print(f'idx: {ep} | avg_rew: {np.mean(total_rewards_list)}')
 
-    if ep != 0 and (ep % print_rate == 0):
-        print(f'idx: {ep} | avg_rew: {np.mean(total_rewards_list)}')
+   while not done:
+       action = select_action(obs)
+       obs, reward, done, _ = env.step(action)
+       if do_render:
+           env.render()
+       agent.rewards.append(reward)
+       total_reward += reward
+       if done:
+           break
 
-    while not done:
-        action = select_action(obs)
-        obs_next, reward, done, info = env.step(action)
-        agent.rewards.append(reward)
-        total_reward += reward
+   running_reward = 0.05 * total_reward + (1 - 0.05) * running_reward
+   finish()
 
-        running_reward = 0.05 * total_reward + .95 * running_reward
+   if running_reward > 500:
+       print("Solved! Running reward is now {}".format(running_reward))
+       break
+   if do_render and ep != 0 and (ep % render_interval == 0):
+       env.render()
+   total_rewards_list.append(total_reward)
 
-        finish()
-        obs = obs_next
-        if running_reward > 200:
-            print("Solved! Running reward is now {}".format(running_reward))
-            break
-        if do_render and ep != 0 and (ep % render_interval == 0):
-            env.render()
-    total_rewards_list.append(total_reward)
+   toc = time.perf_counter()
 
-    toc = time.perf_counter()
