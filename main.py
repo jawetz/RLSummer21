@@ -10,8 +10,24 @@ class DQN():
     def __init__(self, n_state, n_action, net_size=100):
         self.lose=torch.nn.MSELoss()
         super(DQN, self).__init__()
-        self.model=torch.nn.Sequential(torch.nn.Linear(n_state, net_size), torch.nn.ReLU(),torch.nn.Dropout(p=0.5), torch.nn.Linear(net_size, net_size), torch.nn.ReLU(), torch.nn.Dropout(p=0.5), torch.nn.Linear(net_size, n_action)).float()
-        self.target=torch.nn.Sequential(torch.nn.Linear(n_state, net_size), torch.nn.ReLU(),torch.nn.Dropout(p=0.5), torch.nn.Linear(net_size, net_size), torch.nn.ReLU(), torch.nn.Dropout(p=0.5), torch.nn.Linear(net_size, n_action)).float()
+        self.model=torch.nn.Sequential(
+            torch.nn.Linear(n_state, net_size), 
+            torch.nn.ReLU(),
+            torch.nn.Dropout(p=0.5), 
+            torch.nn.Linear(net_size, net_size), 
+            torch.nn.ReLU(), 
+            torch.nn.Dropout(p=0.5),
+            torch.nn.Linear(net_size, n_action)
+        )
+        self.target=torch.nn.Sequential(
+            torch.nn.Linear(n_state, net_size), 
+            torch.nn.ReLU(),
+            torch.nn.Dropout(p=0.5), 
+            torch.nn.Linear(net_size, net_size), 
+            torch.nn.ReLU(), 
+            torch.nn.Dropout(p=0.5), 
+            torch.nn.Linear(net_size, n_action)
+        )
         self.rewards=[]
         self.gamma=.99
         self.replay_buffer=ExperienceReplay(100000)
@@ -32,13 +48,13 @@ class DQN():
             print(type(obs_n))
             print(obs_n.shape)
             target_act=self.target(obs_n)
-            target_max=torch.max(target_act)[0]
-            expected=rew+self.gamma*target_max
+            target_max=torch.max(target_act)
+            expected=torch.tensor(rew, dtype=torch.float32)+self.gamma*target_max
         self.lose(choice, expected).backward()
-        self.optimizer.step()
+        self.optim.step()
     def update_target(self):
         for target_parameters, model_parameters in zip(self.target.parameters(),self.model.parameters()):
-            target_parameters.data.copy_(.05*model_parameters.data()+.95*target_parameters.data())
+            target_parameters.data.copy_(.05*model_parameters.data+.95*target_parameters.data)
 
     def act(self, state):
         if random.random() < eps:
@@ -63,6 +79,8 @@ eps_min=.05
 batch_size=32
 
 def q_learning(n_ep=1000):
+    eps = 0.9
+    eps_min = 0.05
     for episode in range(n_ep):
         state=env.reset()
         tot_rew=0
@@ -73,7 +91,7 @@ def q_learning(n_ep=1000):
             action=agent.act(state)
             state_n, rew, done, _=env.step(action)
             tot_rew+=rew
-            agent.add(state, action, state_n, rew, done)
+            agent.add(state, action, rew, state_n, done)
             if agent.buf_size() > batch_size:
                 agent.train()
                 agent.update_target()
