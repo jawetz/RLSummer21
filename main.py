@@ -26,7 +26,7 @@ class DQN():
         )
         self.rewards=[]
         self.gamma=0.99
-        self.replay_buffer=ExperienceReplay(100000)
+        self.replay_buffer=ExperienceReplay(1000000)
         self.optim=torch.optim.Adam(self.model.parameters(),lr=0.001)
 
     def train(self):
