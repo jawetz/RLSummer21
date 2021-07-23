@@ -13,25 +13,21 @@ class DQN():
         self.model=torch.nn.Sequential(
             torch.nn.Linear(n_state, net_size), 
             torch.nn.ReLU(),
-            torch.nn.Dropout(p=0.5), 
             torch.nn.Linear(net_size, net_size), 
             torch.nn.ReLU(), 
-            torch.nn.Dropout(p=0.5),
             torch.nn.Linear(net_size, n_action)
         )
         self.target=torch.nn.Sequential(
             torch.nn.Linear(n_state, net_size), 
             torch.nn.ReLU(),
-            torch.nn.Dropout(p=0.5), 
             torch.nn.Linear(net_size, net_size), 
             torch.nn.ReLU(), 
-            torch.nn.Dropout(p=0.5), 
             torch.nn.Linear(net_size, n_action)
         )
         self.rewards=[]
-        self.gamma=.99
+        self.gamma=0.99
         self.replay_buffer=ExperienceReplay(100000)
-        self.optim=torch.optim.Adam(self.model.parameters(),lr=0.01)
+        self.optim=torch.optim.Adam(self.model.parameters(),lr=0.001)
 
     def train(self):
         self.optim.zero_grad()
@@ -47,8 +43,9 @@ class DQN():
             obs_n = torch.from_numpy(np.stack(obs_n, axis=0))
             target_act=self.target(obs_n)
             target_max=torch.max(target_act, dim=1)[0]
-            expected=torch.tensor(rew, dtype=torch.float32)+self.gamma*target_max
-        self.lose(choice, expected).backward()
+            expected=torch.tensor(rew, dtype=torch.float32) + self.gamma * target_max
+        loss = self.lose(choice, expected.unsqueeze(-1))
+        loss.backward()
         self.optim.step()
     def update_target(self):
         for target_parameters, model_parameters in zip(self.target.parameters(),self.model.parameters()):
@@ -72,13 +69,12 @@ agent=DQN(env.observation_space.shape[0], env.action_space.n)
 total_reward_episode=[]
 do_render=True
 print_rate=20
-eps=.9
-eps_min=.05
+eps=0.99
+eps_min=0.05
 batch_size=32
 
 def q_learning(n_ep=1000):
-    eps = 0.9
-    eps_min = 0.05
+    global eps, eps_min
     for episode in range(n_ep):
         state=env.reset()
         tot_rew=0
@@ -94,7 +90,7 @@ def q_learning(n_ep=1000):
                 agent.train()
                 agent.update_target()
 
-            state=state_n
+            state=state_n.copy()
             if do_render and episode !=0 and episode % print_rate==0:
                 env.render()
 
