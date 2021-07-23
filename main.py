@@ -45,10 +45,8 @@ class DQN():
         with torch.no_grad():
 
             obs_n = torch.from_numpy(np.stack(obs_n, axis=0))
-            print(type(obs_n))
-            print(obs_n.shape)
             target_act=self.target(obs_n)
-            target_max=torch.max(target_act)
+            target_max=torch.max(target_act, dim=1)[0]
             expected=torch.tensor(rew, dtype=torch.float32)+self.gamma*target_max
         self.lose(choice, expected).backward()
         self.optim.step()
